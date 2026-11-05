@@ -5,6 +5,8 @@ This is the artifact of the paper
 > Jiachen Shen and Hui Zhong. *Restarting a Faulting RISC-V Vector Store: A Contract and a Mechanized
 > Refinement under RVWMO.* Submitted to Formal Methods in System Design.
 
+Archived on Zenodo: [10.5281/zenodo.23966253](https://doi.org/10.5281/zenodo.23966253).
+
 It contains the Rocq development, the 100 Isla litmus tests with their verbatim results, the Sail
 patches used to build the Isla model, and the simulator runs of the fault, repair and replay path.
 

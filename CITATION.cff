@@ -3,6 +3,7 @@ message: "If you use this artifact, please cite it as below."
 title: "Artifact: Restarting a Faulting RISC-V Vector Store: A Contract and a Mechanized Refinement under RVWMO"
 type: software
 license: MIT
+doi: "10.5281/zenodo.23966253"
 repository-code: "https://github.com/Mercury0828/restartability-contract-riscv-artifact"
 authors:
   - family-names: Shen

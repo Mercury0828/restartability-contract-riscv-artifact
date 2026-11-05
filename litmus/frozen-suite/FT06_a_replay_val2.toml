@@ -1,0 +1,41 @@
+# FT06 instance a - single-hart fault -> repair -> REPLAY, VALUE-DISCRIMINATED.
+#
+# Template FT06. Axis varied vs the FT06 reference instance
+# (litmus/trap-scoping/trap_store_faultB2_replay.toml, which stores the config-seeded x5 = 1):
+# the STORED VALUE. Here the faulting store writes 2 (from a freshly materialised x22), and the
+# post-replay load-back asserts it read 2.
+#
+# Why this matters: with value 1, "the load read 1" is also what you would see if the harness had
+# somehow let the ORIGINAL (pre-repair) store commit, or if memory had been seeded. With value 2
+# the read-back value is uniquely produced by the REPLAYED store, so `allowed` here is positive
+# evidence that the re-executed instruction is the one that commits, not merely that some store
+# committed. `0:x1 = 0x2A` additionally certifies the handler ran.
+arch = "RISCV"
+name = "FT06_a_replay_val2"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	addi x22, x0, 2
+	sw x22,0(x7)
+	lw x2,0(x7)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x2 = 0x0000000000000002 & 0:x1 = 0x000000000000002A"

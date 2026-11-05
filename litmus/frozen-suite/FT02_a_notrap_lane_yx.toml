@@ -1,0 +1,44 @@
+# FT02 instance a - MP with NO trap, LANE-SWAPPED. Control for FT01_b.
+#
+# Template FT02 (the no-trap control that isolates the trap boundary). Identical to
+# FT01_b_lane_yx.toml in every respect - same config, same 4-instruction M-mode preamble, same
+# M->U privilege drop, same PMP programming, same lanes, same observer, same assertion - EXCEPT
+# that the PMP-denied `sw x5,0(x7)` is deleted, so no TRAP event is ever emitted. The preamble's
+# own `mret` still emits an XRET event, deliberately: this control removes the TRAP ENTRY alone,
+# not "trap events in general".
+arch = "RISCV"
+name = "FT02_a_notrap_lane_yx"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "y", x17 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "x", x21 = "y" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

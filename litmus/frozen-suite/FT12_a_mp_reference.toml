@@ -1,0 +1,34 @@
+# FT12 instance a - NO-FAULT REFERENCE run of the MP shape.
+#
+# Template FT12 (the plain, privilege-free baseline each trap test is compared against). Two harts,
+# no M-mode preamble, no PMP programming, no handler section, no faulting store - just the bare
+# message-passing shape, run under the SAME config (riscv64_g2_trap_umode_ipo.toml), the same IR
+# and the same cat as every trap test in this suite.
+#
+# Why the suite needs this and FT02 does not suffice: FT02 removes only the TRAP, keeping the
+# preamble (and therefore CSRW and XRET events, U-mode execution, and an installed PMP entry).
+# FT12 removes the entire privileged apparatus. It is the reference point that says what the
+# harness+config+cat do to a textbook RVWMO shape when RESTART-V's machinery is absent, so that a
+# surprising verdict anywhere in FT01-FT11 can be checked against a known-good baseline rather than
+# against intuition.
+arch = "RISCV"
+name = "FT12_a_mp_reference"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	sw x5,0(x16)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	lw x19,0(x21)
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

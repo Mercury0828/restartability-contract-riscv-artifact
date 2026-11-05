@@ -1,0 +1,28 @@
+diff --git a/model/sys/vmem_utils.sail b/model/sys/vmem_utils.sail
+index 9630d19..fe641fb 100644
+--- a/model/sys/vmem_utils.sail
++++ b/model/sys/vmem_utils.sail
+@@ -58,10 +58,19 @@ function split_misaligned(vaddr, width) = {
+   if is_aligned_addr(vaddr, width) | allowed_misaligned(vaddr_bits, width, sys_misaligned_allowed_within_exp) then (1, width)
+   else if sys_misaligned_byte_by_byte then (width, 1)
+   else {
+-    let bytes_per_access = 2 ^ count_trailing_zeros(vaddr_bits);
+-    let num_accesses = width / bytes_per_access;
+-    assert(width == num_accesses * bytes_per_access);
+-    (num_accesses, bytes_per_access)
++    // RESTART-V / Isla footprint fix (M3 G3/G8 "split_misaligned symbolic width").
++    // The upstream else branch computed bytes_per_access = 2^count_trailing_zeros(vaddr_bits),
++    // which is a SYMBOLIC bitvector width whenever the store address is symbolic (exactly the
++    // case in an Isla footprint). A symbolic subrange width crashes isla with
++    // "Symbolic (bit)vector length in subrange_internal" and blocked every store footprint
++    // (14/36 standard RVWMO litmus + the whole vector-store path). Fall back to the concrete
++    // byte-by-byte split (width, 1) -- identical to the sys_misaligned_byte_by_byte branch
++    // above. This is an architecturally valid single-copy-atomic decomposition of a
++    // genuinely-misaligned-allowed access, keeps every subrange width CONCRETE, and is never
++    // reached by the aligned RVWMO/vector litmus (which take the (1, width) branch). Only a
++    // genuinely misaligned-allowed, non-byte-by-byte access changes granularity, from
++    // power-of-2 chunks to single bytes -- unobservable to the litmus/footprint suite.
++    (width, 1)
+   }
+ }
+ 

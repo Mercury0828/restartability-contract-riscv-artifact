@@ -1,0 +1,40 @@
+# FT06 instance c - fault -> repair -> replay, then a SECOND store to a symbolic lane.
+#
+# Template FT06. Axis varied: WHICH ADDRESS is read back. The reference instance reads back the
+# replayed store's own (concrete, config-seeded, PMP-repaired) address 0x84001000. This instance
+# additionally performs a store to the symbolic lane `x` after the replay and reads THAT back.
+#
+# Purpose: it certifies that the hart is still executing normally after the replay - that the
+# post-XRET instruction stream continues to issue architecturally visible memory events to the
+# ordinary litmus address space, not just to the repaired fault address. It is the bridge between
+# the single-hart FT06 replay tests and the multi-hart FT09 observer tests, which depend on
+# post-replay stores to symbolic lanes being real.
+arch = "RISCV"
+name = "FT06_c_replay_then_symbolic"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x7)
+	sw x5,0(x16)
+	lw x2,0(x16)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x2 = 0x0000000000000001 & 0:x1 = 0x000000000000002A"

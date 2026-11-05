@@ -1,0 +1,24 @@
+arch = "RISCV"
+name = "trap-ecall"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x6 = "x", x5 = "1" }
+reset = { "mtvec.bits" = "0x0000000080200000" }
+code = """
+	ecall
+	sw x5,0(x6)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	csrr t0, mepc
+	addi t0, t0, 4
+	csrw mepc, t0
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "*x = 1"

@@ -1,0 +1,52 @@
+# EW_BN_r575 - early-write suite (two duplicate lanes, remote reader).
+#
+# Hart 0 runs the TRAP-FREE program: the PMP entry already covers lane 1, so the store does not
+# fault, and lanes 1, 2, 3 are each written ONCE (F1, W2=5, W3=6).
+# Hart 2 writes 7 to lane 2, so a foreign write can lie in coherence between K2 and D2 (gamma_adj
+# fails). Hart 1 reads lane 2 three times (same address, so coherence orders the reads; no fence needed).
+# In this pair only lane 2 is written early; lane 3 is omitted to keep the three-hart test small. Tested outcome: 5, 7, 5.
+arch = "RISCV"
+name = "EW_BN_r575"
+symbolic = ["a", "b"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "a", x17 = "b", x29 = "0x0000000020FFFFFF" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	addi x22, x0, 5
+	addi x23, x0, 6
+	sw x5,0(x7)
+	sw x22,0(x16)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x21 = "a" }
+code = """
+	lw x18,0(x21)
+	lw x19,0(x21)
+	lw x20,0(x21)
+"""
+
+[thread.2]
+init = { pc_reset_address = "0x0000000080120000", x25 = "a" }
+code = """
+	addi x26, x0, 7
+	sw x26,0(x25)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "unsat"
+assertion = "1:x18 = 5 & 1:x19 = 7 & 1:x20 = 5"

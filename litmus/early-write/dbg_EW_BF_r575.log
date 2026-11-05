@@ -1,0 +1,18 @@
+No primop parse_hex_bits (Name { id: 2602 })
+No primop emulator_write_tag (Name { id: 2902 })
+No primop emulator_read_tag (Name { id: 2901 })
+No primop sys_enable_experimental_extensions (Name { id: 2829 })
+No primop sys_enable_experimental_extensions (Name { id: 2829 })
+No primop valid_reservation (Name { id: 4257 })
+No primop parse_hex_bits (Name { id: 2602 })
+No primop emulator_write_tag (Name { id: 2902 })
+No primop emulator_read_tag (Name { id: 2901 })
+No primop sys_enable_experimental_extensions (Name { id: 2829 })
+No primop sys_enable_experimental_extensions (Name { id: 2829 })
+No primop valid_reservation (Name { id: 4257 })
+Error in parsing smt output to get allowed/forbidden ...
+z3 head: 'unknown
+(error '...
+z3 errors:
+(error "line 1851 column 481: model is not available")
+EW_BF_r575 error (31 of 32) 468302ms ............................................................... [93m[1m?[0m

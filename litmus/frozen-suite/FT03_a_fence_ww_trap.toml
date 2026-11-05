@@ -1,0 +1,46 @@
+# FT03 instance a - MP across a trap, ordered by `fence w,w` (weaker than rw,rw).
+#
+# Template FT03 (explicit-fence calibration). Axis varied vs the FT03 reference instance
+# (litmus/trap-scoping/S1v2_control_fence.toml, which uses `fence rw,rw`): the FENCE STRENGTH.
+# `fence w,w` is exactly the predecessor/successor set needed for the W->W edge that closes the MP
+# cycle on the producer side (RVWMO ppo rule r4 via fence-w-w), and nothing more. If the harness
+# returns `forbidden` here as it does for `fence rw,rw`, then the decider is discriminating the
+# fence's ACTUAL predecessor/successor sets rather than treating any fence as a full barrier.
+arch = "RISCV"
+name = "FT03_a_fence_ww_trap"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	fence w,w
+	sw x5,0(x7)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

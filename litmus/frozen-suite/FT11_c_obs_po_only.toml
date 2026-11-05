@@ -1,0 +1,47 @@
+# FT11 instance c - MP across a trap, observer with NO ordering at all (plain program order).
+#
+# Template FT11. Axis varied: the observer's ordering mechanism is removed entirely -
+#     lw x18,0(x20) ; lw x19,0(x21)
+#
+# Purpose: this is the floor of the observer axis. With no fence, no dependency and two distinct
+# addresses, RVWMO places NO constraint on the observer's two loads, so the MP outcome is permitted
+# no matter what the producer does. It therefore establishes that the observer, not the producer,
+# is the binding constraint in FT11_a and FT11_b - and it is the reference against which the fenced
+# observer of FT01 is read. Concretely: FT01 (fenced observer) and FT11_c (bare observer) differ in
+# exactly one instruction on hart 1 while the whole trap-side producer is held fixed.
+arch = "RISCV"
+name = "FT11_c_obs_po_only"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

@@ -1,0 +1,40 @@
+# S1_control_fence.toml - RESTART-V S1 differential, CALIBRATION control.
+#
+# Same MP as S1_mp.toml, but the producer now has an EXPLICIT fence rw,rw
+# between its two stores (structurally rvwmo-suite/MP+fence.rw.rws.toml).
+#
+#   Hart 0 (producer):  DATA=1 to X ; fence rw,rw ; FLAG=1 to Y
+#   Hart 1 (consumer):  read FLAG from Y ; fence rw,rw ; read DATA from X
+#
+# Because the producer stores are ordered by an ARCHITECTURAL fence (not by
+# the disclosed [W];po;[W] stand-in), the non-SC outcome must be FORBIDDEN
+# under BOTH cats - nodrain and drain agree. This calibrates the harness:
+# the model orders store->store when TOLD to (a real fence), independent of
+# the drain stand-in. It shows the S1_mp flip is caused by the added drain
+# edge, not by the harness.
+#
+# Non-SC outcome tested:  FLAG seen (1:x5=1) AND DATA not seen (1:x7=0).
+#   Expected: FORBIDDEN under nodrain AND FORBIDDEN under drain.
+arch = "RISCV"
+name = "S1_control_fence"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x7 = "y", x6 = "x", x5 = "1" }
+code = """
+	sw x5,0(x6)
+	fence rw,rw
+	sw x5,0(x7)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x8 = "x", x6 = "y" }
+code = """
+	lw x5,0(x6)
+	fence rw,rw
+	lw x7,0(x8)
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x5 = 1 & 1:x7 = 0"

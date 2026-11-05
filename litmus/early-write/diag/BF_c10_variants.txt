@@ -1,0 +1,8 @@
+smt.macro_finder=true -> sat 1s
+smt.ematching=false -> sat 2s
+smt.random_seed=2 -> sat 39s
+smt.random_seed=1 -> sat 47s
+smt.random_seed=3 -> sat 53s
+model.compact=false -> unknown 375s
+smt.relevancy=0 -> unknown 609s
+smt.mbqi.max_iterations=100000 ->  1801s

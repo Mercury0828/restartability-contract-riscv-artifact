@@ -1,0 +1,174 @@
+(* ===================================================================== *)
+(* riscv_s1v2_drain.cat - RESTART-V S1-v2 differential, completion P1     *)
+(*                        "TRAP-DRAIN" = STOCK RVWMO + ONE trap-specific   *)
+(*                        drain edge, and nothing else.                    *)
+(*                                                                        *)
+(* Base = upstream isla web/client/dist/riscv.cat (RVWMO: fence +         *)
+(*   dependency + coherence), copied VERBATIM.                            *)
+(* Extension = the TRAP / XRET / CSRW abstract-event accessors from        *)
+(*   litmus/cat/riscv_trap.cat.  On isla-snapshots-regen/rv64d_g58.ir      *)
+(*   these sets are NON-EMPTY (the model emits abstract `sail_trap`,       *)
+(*   `sail_mret`, `sail_write_CSR` events) - see                           *)
+(*   model/S1v2_trap_differential_2026-07-25.md Step 0.                    *)
+(*                                                                        *)
+(* DELIBERATE OMISSION: the tripwire axiom                                *)
+(*   empty ([XRET] | [TRAP] | [CSRW]) as Restartv-trap-events-absent-on-snapshot *)
+(* of riscv_trap.cat is NOT included here. That axiom's job was to detect  *)
+(* the arrival of the trap vocabulary; on g58 it now FAILS, and leaving it *)
+(* in would reject every candidate (`forbidden (0 of N)`) and mask the     *)
+(* actual memory-ordering verdict. Its firing is recorded separately as    *)
+(* Step 0 evidence.                                                        *)
+(*                                                                        *)
+(* This is the P1 / strict-drain completion. It is byte-for-byte           *)
+(* riscv_s1v2_nodrain.cat EXCEPT for the `trap_drain` definition below and  *)
+(* its single extra term in the `ppo` union. Diff the two files.            *)
+(*                                                                        *)
+(* +--------------------------------------------------------------------+ *)
+(* | TRAP-SPECIFIC, not a global stand-in (this is the S1-v2 upgrade).   | *)
+(* | The old S1 drain was `s1_drain = [W];po;[W]` - a GLOBAL TSO-like    | *)
+(* | store->store order that fires on every same-hart store pair, with   | *)
+(* | or without a trap (litmus/cat/riscv_s1_drain.cat, disclosed there). | *)
+(* | `trap_drain` below is built from the REAL abstract trap events that  | *)
+(* | the Sail model emits on isla-snapshots-regen/rv64d_g58.ir           | *)
+(* | (sail_trap -> TRAP, sail_mret -> XRET). It is therefore EMPTY on any | *)
+(* | execution with no trap, which is exactly what                       | *)
+(* | litmus/trap-scoping/S1v2_control_notrap.toml demonstrates.          | *)
+(* +--------------------------------------------------------------------+ *)
+(* ===================================================================== *)
+
+include "cos.cat"
+
+accessor fence_kind: barrier_kind = .0
+
+accessor F: bool = is sail_barrier
+
+define is_fence(f: barrier_kind, ev: Event): bool =
+  F(ev) & (fence_kind(ev) == f)
+
+define Fence-r-r(ev: Event): bool = is_fence(Barrier_RISCV_r_r, ev)
+define Fence-r-w(ev: Event): bool = is_fence(Barrier_RISCV_r_w, ev)
+define Fence-r-rw(ev: Event): bool = is_fence(Barrier_RISCV_r_rw, ev)
+define Fence-w-r(ev: Event): bool = is_fence(Barrier_RISCV_w_r, ev)
+define Fence-w-w(ev: Event): bool = is_fence(Barrier_RISCV_w_w, ev)
+define Fence-w-rw(ev: Event): bool = is_fence(Barrier_RISCV_w_rw, ev)
+define Fence-rw-r(ev: Event): bool = is_fence(Barrier_RISCV_rw_r, ev)
+define Fence-rw-w(ev: Event): bool = is_fence(Barrier_RISCV_rw_w, ev)
+define Fence-rw-rw(ev: Event): bool = is_fence(Barrier_RISCV_rw_rw, ev)
+define Fence-tso(ev: Event): bool = is_fence(Barrier_RISCV_tso, ev)
+
+accessor ak_variety: Access_variety = .access_kind.match { AK_explicit => .variety, AK_arch => .variety, _ => default }
+accessor ak_strength: Access_strength = .access_kind.match { AK_explicit => .strength, _ => default }
+
+define A(ev: Event): bool = R(ev) & (ak_strength(ev) == AS_rel_or_acq)
+define L(ev: Event): bool = W(ev) & (ak_strength(ev) == AS_rel_or_acq)
+define X(ev: Event): bool = ak_variety(ev) == AV_exclusive
+
+define RCsc(ev: Event): bool = (A(ev) | L(ev)) & X(ev)
+
+(* --------------------------------------------------------------------- *)
+(* TRAP / XRET / CSRW abstract-event vocabulary (g58 snapshot).           *)
+(* `is <name>` matches the Abstract-event name (isla-mml accessor.rs).    *)
+(* --------------------------------------------------------------------- *)
+accessor xret_ev: bool = is sail_mret          (* mret / xret effect         *)
+accessor trap_ev: bool = is sail_trap          (* synchronous trap entry     *)
+accessor csrw_ev: bool = is sail_write_CSR     (* CSR write (pmpaddr/mepc..) *)
+
+define XRET(ev: Event): bool = xret_ev(ev)
+define TRAP(ev: Event): bool = trap_ev(ev)
+define CSRW(ev: Event): bool = csrw_ev(ev)
+
+(* RISC-V fences *)
+let fence-r-r = [R]; (po & (_ * Fence-r-r)); po; [R]
+let fence-r-w = [R]; (po & (_ * Fence-r-w)); po; [W]
+let fence-r-rw = [R]; (po & (_ * Fence-r-rw)); po; [M]
+let fence-w-r = [W]; (po & (_ * Fence-w-r)); po; [R]
+let fence-w-w = [W]; (po & (_ * Fence-w-w)); po; [W]
+let fence-w-rw = [W]; (po & (_ * Fence-w-rw)); po; [M]
+let fence-rw-r = [M]; (po & (_ * Fence-rw-r)); po; [R]
+let fence-rw-w = [M]; (po & (_ * Fence-rw-w)); po; [W]
+let fence-rw-rw = [M]; (po & (_ * Fence-rw-rw)); po; [M]
+let fence-tso =
+  ([W]; (po & (_ * Fence-tso)); po; [W]) | ([R]; (po & (_ * Fence-tso)); po; [M])
+
+let fence =
+  fence-r-r | fence-r-w | fence-r-rw |
+  fence-w-r | fence-w-w | fence-w-rw |
+  fence-rw-r | fence-rw-w | fence-rw-rw |
+  fence-tso
+
+let po-loc-no-w = po-loc \ (po-loc?;[W];po-loc)
+let rsw = rf^-1;rf
+
+(* --------------------------------------------------------------------- *)
+(* THE ONLY DIFFERENCE FROM riscv_s1v2_nodrain.cat: the TRAP-SPECIFIC     *)
+(* drain edge.                                                           *)
+(*                                                                        *)
+(* Reading: a memory event po-before the trap entry is ordered before any  *)
+(* memory event po-after the xret that leaves the handler. I.e. the store  *)
+(* buffer is DRAINED at the trap boundary. Composition of three           *)
+(* bracketed-domain terms; the intermediate points are [TRAP] and [XRET],  *)
+(* so the resulting relation is M x M and is non-empty ONLY when a real    *)
+(* sail_trap event AND a real sail_mret event are both present and         *)
+(* po-related. This exact 3-term composition is accepted by the isla-mml   *)
+(* dialect (measured; see model/S1v2_trap_differential_2026-07-25.md).     *)
+(*                                                                        *)
+(* po-visibility requirement: abstract events are only in isla's `po` if   *)
+(* the config lists them in `in_program_order` (axiomatic.rs:411-420).     *)
+(* Use litmus/trap-scoping/riscv64_g2_trap_umode_ipo.toml, which lists     *)
+(* sail_trap / sail_mret / sail_write_CSR alongside sail_barrier. With the *)
+(* stock config this relation is identically EMPTY and the drain cat       *)
+(* behaves exactly like the nodrain cat.                                   *)
+let trap_drain = ([M]; po; [TRAP]); ([TRAP]; po; [XRET]); ([XRET]; po; [M])
+show trap_drain
+(* --------------------------------------------------------------------- *)
+
+(*************)
+(* ppo rules *)
+(*************)
+
+(* Overlapping-Address Orderings *)
+let r1 = [M];po-loc;[W]
+let r2 = ([R];po-loc-no-w;[R]) \ rsw
+let r3 = [X];rfi;[R]
+(* Explicit Synchronization *)
+let r4 = fence
+let r5 = [A];po;[M]
+let r6 = [M];po;[L]
+let r7 = [RCsc];po;[RCsc]
+let r8 = rmw
+(* Syntactic Dependencies *)
+let r9 = [M];addr;[M]
+let r10 = [M];data;[W]
+let r11 = [M];ctrl;[W]
+(* Pipeline Dependencies *)
+let r12 = [M];(addr|data);[W];rfi;[R]
+let r13 = [M];addr;[M];po;[W]
+
+let ppo =
+  r1
+| r2
+| r3
+| r4
+| r5
+| r6
+| r7
+| r8
+| r9
+| r10
+| r11
+| r12
+| r13
+| trap_drain         (* <-- THE trap-specific drain edge (P1 completion) *)
+
+(**********)
+(* Axioms *)
+(**********)
+
+(* Sc per location *)
+acyclic co|rf|fr|po-loc as Coherence
+
+(* Main model axiom *)
+acyclic co|rfe|fr|ppo as Model
+
+(* Atomicity axiom *)
+empty rmw & (fre;coe) as Atomic

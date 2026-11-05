@@ -1,0 +1,13 @@
+No primop parse_hex_bits (Name { id: 2602 })
+No primop emulator_write_tag (Name { id: 2902 })
+No primop emulator_read_tag (Name { id: 2901 })
+No primop sys_enable_experimental_extensions (Name { id: 2829 })
+No primop sys_enable_experimental_extensions (Name { id: 2829 })
+No primop valid_reservation (Name { id: 4257 })
+No primop parse_hex_bits (Name { id: 2602 })
+No primop emulator_write_tag (Name { id: 2902 })
+No primop emulator_read_tag (Name { id: 2901 })
+No primop sys_enable_experimental_extensions (Name { id: 2829 })
+No primop sys_enable_experimental_extensions (Name { id: 2829 })
+No primop valid_reservation (Name { id: 4257 })
+EW_BN_r575 forbidden (0 of 20) 10693ms ............................................................. [93m[1m?[0m

@@ -1,0 +1,183 @@
+(* ===================================================================== *)
+(* riscv_trap.cat - RESTART-V M3 / E-track gap G5                         *)
+(* RVWMO + trap / xret / csr event vocabulary for the fault->repair->     *)
+(* replay shape (SHAPE B2, litmus/trap-scoping/trap_store_faultB2_replay).*)
+(*                                                                        *)
+(* Base = upstream isla web/client/dist/riscv.cat (RVWMO: fence +         *)
+(*   dependency + coherence), copied VERBATIM below.                      *)
+(* Extension = the G5 trap/xret/csr vocabulary, in two honestly-labelled  *)
+(*   parts:                                                               *)
+(*     (1) GROUNDED & VALIDATED - the memory-level replay signature,      *)
+(*         built only from events Isla actually exposes to the cat.       *)
+(*     (2) ASPIRATIONAL - trap/xret/csr abstract-event accessors that     *)
+(*         name the events the model WOULD have to emit. They parse and   *)
+(*         load, but stay EMPTY on isla-snapshots-regen/rv64d.ir.         *)
+(*                                                                        *)
+(* HONESTY RAIL (measured 2026-07-24): on rv64d.ir the ONLY abstract      *)
+(* (cat-visible) event the Sail model emits is `sail_barrier` (grep of    *)
+(* the IR: exactly one `abstract` decl). mret, trap-entry and CSR writes  *)
+(* are Event::Function / Event::Branch nodes -> isla `other_events`       *)
+(* (include_in_smt = false, axiomatic.rs new_graph) -> NOT in smt_events  *)
+(* -> NOT visible to this cat. A non-debug graph of SHAPE B2 exposes to   *)
+(* the cat exactly TWO memory events: the committed (replayed) store W and *)
+(* the U-mode load-back R. Everything trap-related is debug-only.         *)
+(* ===================================================================== *)
+
+include "cos.cat"
+
+accessor fence_kind: barrier_kind = .0
+
+accessor F: bool = is sail_barrier
+
+define is_fence(f: barrier_kind, ev: Event): bool =
+  F(ev) & (fence_kind(ev) == f)
+
+define Fence-r-r(ev: Event): bool = is_fence(Barrier_RISCV_r_r, ev)
+define Fence-r-w(ev: Event): bool = is_fence(Barrier_RISCV_r_w, ev)
+define Fence-r-rw(ev: Event): bool = is_fence(Barrier_RISCV_r_rw, ev)
+define Fence-w-r(ev: Event): bool = is_fence(Barrier_RISCV_w_r, ev)
+define Fence-w-w(ev: Event): bool = is_fence(Barrier_RISCV_w_w, ev)
+define Fence-w-rw(ev: Event): bool = is_fence(Barrier_RISCV_w_rw, ev)
+define Fence-rw-r(ev: Event): bool = is_fence(Barrier_RISCV_rw_r, ev)
+define Fence-rw-w(ev: Event): bool = is_fence(Barrier_RISCV_rw_w, ev)
+define Fence-rw-rw(ev: Event): bool = is_fence(Barrier_RISCV_rw_rw, ev)
+define Fence-tso(ev: Event): bool = is_fence(Barrier_RISCV_tso, ev)
+
+accessor ak_variety: Access_variety = .access_kind.match { AK_explicit => .variety, AK_arch => .variety, _ => default }
+accessor ak_strength: Access_strength = .access_kind.match { AK_explicit => .strength, _ => default }
+
+define A(ev: Event): bool = R(ev) & (ak_strength(ev) == AS_rel_or_acq)
+define L(ev: Event): bool = W(ev) & (ak_strength(ev) == AS_rel_or_acq)
+define X(ev: Event): bool = ak_variety(ev) == AV_exclusive
+
+define RCsc(ev: Event): bool = (A(ev) | L(ev)) & X(ev)
+
+(* RISC-V fences *)
+let fence-r-r = [R]; (po & (_ * Fence-r-r)); po; [R]
+let fence-r-w = [R]; (po & (_ * Fence-r-w)); po; [W]
+let fence-r-rw = [R]; (po & (_ * Fence-r-rw)); po; [M]
+let fence-w-r = [W]; (po & (_ * Fence-w-r)); po; [R]
+let fence-w-w = [W]; (po & (_ * Fence-w-w)); po; [W]
+let fence-w-rw = [W]; (po & (_ * Fence-w-rw)); po; [M]
+let fence-rw-r = [M]; (po & (_ * Fence-rw-r)); po; [R]
+let fence-rw-w = [M]; (po & (_ * Fence-rw-w)); po; [W]
+let fence-rw-rw = [M]; (po & (_ * Fence-rw-rw)); po; [M]
+let fence-tso =
+  ([W]; (po & (_ * Fence-tso)); po; [W]) | ([R]; (po & (_ * Fence-tso)); po; [M])
+
+let fence =
+  fence-r-r | fence-r-w | fence-r-rw |
+  fence-w-r | fence-w-w | fence-w-rw |
+  fence-rw-r | fence-rw-w | fence-rw-rw |
+  fence-tso
+
+let po-loc-no-w = po-loc \ (po-loc?;[W];po-loc)
+let rsw = rf^-1;rf
+
+(*************)
+(* ppo rules *)
+(*************)
+
+(* Overlapping-Address Orderings *)
+let r1 = [M];po-loc;[W]
+let r2 = ([R];po-loc-no-w;[R]) \ rsw
+let r3 = [X];rfi;[R]
+(* Explicit Synchronization *)
+let r4 = fence
+let r5 = [A];po;[M]
+let r6 = [M];po;[L]
+let r7 = [RCsc];po;[RCsc]
+let r8 = rmw
+(* Syntactic Dependencies *)
+let r9 = [M];addr;[M]
+let r10 = [M];data;[W]
+let r11 = [M];ctrl;[W]
+(* Pipeline Dependencies *)
+let r12 = [M];(addr|data);[W];rfi;[R]
+let r13 = [M];addr;[M];po;[W]
+
+let ppo =
+  r1
+| r2
+| r3
+| r4
+| r5
+| r6
+| r7
+| r8
+| r9
+| r10
+| r11
+| r12
+| r13
+
+(**********)
+(* Axioms *)
+(**********)
+
+(* Sc per location *)
+acyclic co|rf|fr|po-loc as Coherence
+
+(* Main model axiom *)
+acyclic co|rfe|fr|ppo as Model
+
+(* Atomicity axiom *)
+empty rmw & (fre;coe) as Atomic
+
+(* ===================================================================== *)
+(* G5 EXTENSION - trap / xret / csr vocabulary                            *)
+(* ===================================================================== *)
+
+(* --------------------------------------------------------------------- *)
+(* (1) GROUNDED & VALIDATED - RESTART-V memory-level replay signature.    *)
+(*                                                                        *)
+(* SHAPE B2 exposes to the cat exactly two memory events:                 *)
+(*   W @0x84001000 = 1  - the committed store, produced by the REPLAYED   *)
+(*                        execution of `sw` after the handler widened PMP; *)
+(*                        the ORIGINAL (faulted) `sw` produced NO write    *)
+(*                        event (PMP-denied), so despite two store         *)
+(*                        attempts in program order there is exactly ONE   *)
+(*                        committed write - the memory footprint of        *)
+(*                        fault -> repair -> replay.                       *)
+(*   R @0x84001000 = 1  - the U-mode load-back that observes it.          *)
+(*                                                                        *)
+(* `replay` names the internal reads-from from the committed replayed     *)
+(* store to the later same-thread load. On SHAPE B2 it is populated:      *)
+(* {(W11_86_0 -> R12_60_0)}. This is the ONLY trap-related ordering the   *)
+(* current snapshot lets the cat express and check.                       *)
+(* --------------------------------------------------------------------- *)
+let replay = [W]; rfi; [R]
+show replay
+
+(* --------------------------------------------------------------------- *)
+(* (2) ASPIRATIONAL - trap / xret / csr abstract-event vocabulary.        *)
+(*                                                                        *)
+(* Target vocabulary, following the ARM eret.cat pattern                  *)
+(*   (accessor ERET: bool = is sail_eret).                                *)
+(* These name the abstract events the Sail RISC-V model WOULD have to     *)
+(* emit for the cat to order trap-entry / handler-repair / xret against   *)
+(* the replayed store. `is <name>` compares against Abstract-event names  *)
+(* (isla-mml accessor.rs), so an unknown name simply never matches -      *)
+(* these sets LOAD cleanly but are EMPTY on rv64d.ir.                     *)
+(* --------------------------------------------------------------------- *)
+accessor xret_ev: bool = is sail_mret          (* mret / xret effect        *)
+accessor trap_ev: bool = is sail_trap          (* synchronous trap entry    *)
+accessor csrw_ev: bool = is sail_write_CSR     (* CSR write (pmpaddr/mepc..) *)
+
+define XRET(ev: Event): bool = xret_ev(ev)
+define TRAP(ev: Event): bool = trap_ev(ev)
+define CSRW(ev: Event): bool = csrw_ev(ev)
+
+(* The ordering the model WOULD express once those events exist:          *)
+(* trap-entry -po-> handler CSR repair -po-> replayed store. Kept as a    *)
+(* comment because it is identically empty on this snapshot and would     *)
+(* otherwise add nothing checkable:                                       *)
+(*   let trap-repair-replay = [TRAP]; po; [CSRW]; po; [W]                  *)
+
+(* MACHINE-CHECKED STATEMENT OF THE G5 GAP.                               *)
+(* This axiom asserts the trap/xret/csr event sets are all empty. It      *)
+(* PASSES on rv64d.ir precisely because the snapshot exposes none of      *)
+(* these events to the cat. If a future snapshot emits them as abstract   *)
+(* events, this axiom FLIPS to a violation - a self-checking tripwire for *)
+(* when the G5 vocabulary becomes populatable.                            *)
+empty ([XRET] | [TRAP] | [CSRW]) as Restartv-trap-events-absent-on-snapshot

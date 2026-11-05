@@ -1,0 +1,49 @@
+# FT05 instance a - LOAD BUFFERING (LB) across a trap boundary.
+#
+# Template FT05. Shape:
+#   Hart 0 (M-mode preamble, then U-mode):  lw x18 <- y ; <PMP fault -> TRAP -> handler -> XRET ->
+#                                            replay> ; sw x=1
+#   Hart 1 (no preamble):                   lw x19 <- x ; sw y=1
+# Tested outcome: BOTH loads read 1 (`0:x18 = 1 & 1:x19 = 1`) - the classic non-SC LB result,
+# which requires each hart's load to be reordered after its own later store.
+#
+# What it probes that FT01/FT04 do not: LB's cycle needs R->W ordering. A trap boundary that acts
+# as a full pipeline serialisation would order hart 0's load before its post-replay store and break
+# the cycle. Both harts are otherwise completely unordered (plain po), so LB is the most permissive
+# member of the family and the most sensitive to any ordering the trap adds.
+arch = "RISCV"
+name = "FT05_a_lb_trap"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x20 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	lw x18,0(x20)
+	sw x5,0(x7)
+	sw x5,0(x16)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x17 = "y", x21 = "x" }
+code = """
+	lw x19,0(x21)
+	sw x5,0(x17)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x18 = 1 & 1:x19 = 1"

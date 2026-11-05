@@ -1,0 +1,61 @@
+# S1v2_control_notrap.toml - RESTART-V S1-v2 differential, THE KEY CONTROL.
+#
+# Identical to S1v2_trap_mp.toml in EVERY respect (same config, same preamble, same M->U
+# privilege drop, same PMP programming, same addresses, same reader, same assertion) except that
+# hart 0's middle instruction - the PMP-denied `sw x5,0(x7)` to 0x84001000 that TAKES THE TRAP -
+# is deleted. Hart 0 therefore executes two plain stores in program order and NEVER traps.
+#
+#   Hart 0: csrw pmpaddr0,x29 ; csrw pmpcfg0,x30 ; csrw mepc,x28 ; mret
+#           sw x5,0(x16)    DATA=1 -> X
+#           sw x5,0(x17)    FLAG=1 -> Y
+#   Hart 1: lw x18,0(x20) ; fence rw,rw ; lw x19,0(x21)
+#
+# WHY THIS IS THE LOAD-BEARING CONTROL. With no sail_trap event, [TRAP] is empty, so
+#   trap_drain = ([M];po;[TRAP]); ([TRAP];po;[XRET]); ([XRET];po;[M])
+# is EMPTY, and riscv_s1v2_drain.cat degenerates to riscv_s1v2_nodrain.cat. BOTH cats must
+# therefore return the SAME verdict (allowed) on this test.
+#
+# This is precisely what the OLD S1 differential could not show. Its drain edge was the global
+# `s1_drain = [W];po;[W]` (litmus/cat/riscv_s1_drain.cat), which fires on ANY same-hart store
+# pair; it would forbid this trapless test too, so the old flip could not be attributed to the
+# trap boundary. If this control comes back `allowed` under BOTH cats while S1v2_trap_mp.toml
+# flips allowed -> forbidden, the flip is caused by the TRAP BOUNDARY specifically.
+#
+# NOTE: the preamble's own `mret` still emits an XRET event here. That is deliberate - it shows
+# trap_drain is empty because of the missing TRAP, not because XRET is missing.
+arch = "RISCV"
+name = "S1v2_control_notrap"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

@@ -1,0 +1,48 @@
+# FT08 instance b - COHERENCE spanning the trap boundary, COHERENCE-RESPECTING observation.
+#
+# Template FT08. Identical program to FT08_a; axis varied: the ORDER in which the observer is
+# asserted to see the two values. Here `1:x18 = 1 & 1:x19 = 2` - the earlier store first, then the
+# later one, which coherence permits.
+#
+# The (FT08_a, FT08_b) pair is the actual measurement: same program, same trap boundary, two
+# observations that differ only by coherence order. They must split. If they agreed, either the
+# coWW edge across the trap boundary is not being built (both allowed) or the observer's two loads
+# are over-constrained (both forbidden), and in neither case would FT08 be telling us anything
+# about the trap.
+arch = "RISCV"
+name = "FT08_b_coRR_ordered"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	addi x22, x0, 2
+	sw x22,0(x16)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x21 = "x" }
+code = """
+	lw x18,0(x21)
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 2"

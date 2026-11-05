@@ -1,0 +1,39 @@
+# FT07 instance b - same shape as FT07_a, asserting the STALE read instead.
+#
+# Template FT07. Axis varied: the ASSERTED value of the read-back (1 -> 0), i.e. the load returns
+# the INITIAL value of `x` even though a program-order-earlier store on the SAME hart wrote 1 to
+# it, with only the trap/handler/replay sequence in between.
+#
+# This is the discriminating negative of FT07_a. RVWMO's sc-per-location (`acyclic co|rf|fr|po-loc`)
+# forbids it, so the pair (FT07_a, FT07_b) must split. If BOTH came back `allowed` the read-back
+# test would be vacuous - the solver would simply be free to pick either value - and the FT07
+# family would carry no information. The trap boundary must not create an exception to po-loc.
+arch = "RISCV"
+name = "FT07_b_rfi_across_trap_stale"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	lw x18,0(x16)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "unsat"
+assertion = "0:x18 = 0 & 0:x1 = 0x000000000000002A"

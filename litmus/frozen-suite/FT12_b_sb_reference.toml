@@ -1,0 +1,28 @@
+# FT12 instance b - NO-FAULT REFERENCE run of the SB shape.
+#
+# Template FT12. Axis varied vs FT12_a: the memory SHAPE (store buffering instead of message
+# passing). Bare two-hart SB - `sw x=1 ; lw y` against `sw y=1 ; lw x` - with no preamble, no PMP,
+# no handler and no fault, under the same config/IR/cat.
+#
+# It is the baseline for the FT04 family exactly as FT12_a is the baseline for FT01/FT02/FT03.
+arch = "RISCV"
+name = "FT12_b_sb_reference"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x20 = "y" }
+code = """
+	sw x5,0(x16)
+	lw x18,0(x20)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x17 = "y", x21 = "x" }
+code = """
+	sw x5,0(x17)
+	lw x19,0(x21)
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x18 = 0 & 1:x19 = 0"

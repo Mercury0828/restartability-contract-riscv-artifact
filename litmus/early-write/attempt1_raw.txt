@@ -1,0 +1,14 @@
+EW_AN_r00	EW_AN_r00 allowed (10 of 10) 22061ms	26s
+EW_AN_r06	EW_AN_r06 allowed (10 of 10) 31427ms	45s
+EW_AN_r50	EW_AN_r50 allowed (10 of 10) 19448ms	27s
+EW_AN_r56	EW_AN_r56 allowed (10 of 10) 15653ms	21s
+EW_BN_r575	EW_BN_r575 forbidden (0 of 20) 9268ms	14s
+EW_AF_r00	EW_AF_r00 error (0 of 18) 282435ms	286s
+EW_BF_r575	EW_BF_r575 error (0 of 32) 295320ms	299s
+# attempt 2 (2026-11-03 16:45, detached setsid/nohup in WSL, 16-digit literal): no result lines; the WSL distro stopped overnight and killed the run before any AF/BF test finished. Relaunched 2026-11-04 with wsl.exe held in the foreground.
+# attempt 3 (2026-11-04 08:45): launched in the wrong distro (Ubuntu-24.04 has no Isla); rc=127 for all five, no test ran. Lines moved here:
+EW_BF_r575	NO-SUMMARY-LINE rc=127 last: timeout: failed to run command ‘/root/restartv/isla/target/release/isla-axiomatic’: No such file or directory 	0s
+EW_AF_r00	NO-SUMMARY-LINE rc=127 last: timeout: failed to run command ‘/root/restartv/isla/target/release/isla-axiomatic’: No such file or directory 	0s
+EW_AF_r50	NO-SUMMARY-LINE rc=127 last: timeout: failed to run command ‘/root/restartv/isla/target/release/isla-axiomatic’: No such file or directory 	0s
+EW_AF_r06	NO-SUMMARY-LINE rc=127 last: timeout: failed to run command ‘/root/restartv/isla/target/release/isla-axiomatic’: No such file or directory 	0s
+EW_AF_r56	NO-SUMMARY-LINE rc=127 last: timeout: failed to run command ‘/root/restartv/isla/target/release/isla-axiomatic’: No such file or directory 	0s

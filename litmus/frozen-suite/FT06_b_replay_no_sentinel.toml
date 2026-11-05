@@ -1,0 +1,39 @@
+# FT06 instance b - fault -> repair -> replay, NEGATIVE (handler-did-not-run) discriminator.
+#
+# Template FT06. Axis varied: the ASSERTED OUTCOME rather than the program. The program is the
+# FT06 reference (store 1 to the PMP-denied address, then load it back), but the assertion demands
+# the load-back succeed (`0:x2 = 1`) WHILE the handler sentinel is absent (`0:x1 = 0`).
+#
+# That combination is unreachable if the replay story is the real one: the store can only commit
+# after the M-handler has widened pmpaddr0, and the same handler writes x1 = 0x2A. So this must
+# come back with the OPPOSITE verdict from the reference instance. A test family in which every
+# member is `allowed` proves nothing; this is the member that is supposed to fail, and the pair
+# (reference, this) is the actual discrimination.
+arch = "RISCV"
+name = "FT06_b_replay_no_sentinel"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x7)
+	lw x2,0(x7)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "unsat"
+assertion = "0:x2 = 0x0000000000000001 & 0:x1 = 0x0000000000000000"

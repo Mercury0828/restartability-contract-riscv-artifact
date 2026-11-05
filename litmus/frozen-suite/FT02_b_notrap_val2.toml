@@ -1,0 +1,42 @@
+# FT02 instance b - MP with NO trap, VALUE-DISCRIMINATED. Control for FT01_c.
+#
+# Template FT02. Same value discrimination as FT01_c (DATA = 2, FLAG = 1) with the faulting store
+# deleted. Pairing this with FT01_c keeps the value axis fixed while the trap axis moves, so any
+# difference between them is attributable to the trap boundary and not to the store values.
+arch = "RISCV"
+name = "FT02_b_notrap_val2"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	addi x22, x0, 2
+	sw x22,0(x16)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

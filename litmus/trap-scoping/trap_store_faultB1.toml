@@ -1,0 +1,64 @@
+# SHAPE B1 (U-mode + denying PMP, handler SKIPS): the G6 preamble -> a real verdict.
+#
+# Minimal-event form: the ONLY data memory access is the faulting U-mode store (which faults, so it
+# emits no committed write). The handler proves it ran by setting a sentinel register x1=0x2A, then
+# skips the faulting store (mepc+=4) and mret. This keeps the axiomatic candidate set small enough to
+# terminate (the fuller good-store+replay form explodes, see model/M3_trap_storefault_2026-07-24.md).
+#
+# Model facts that forced this shape (all probe-confirmed on the regen IR):
+#   * cur_privilege="User" default is stomped by reset_sys() -> enter U-mode via an mret preamble.
+#   * mstatus.SXL must be RV64 (config mstatus=0xA00000000) or translationMode()->architecture() is
+#     invalid on the first U-mode fetch -> translateAddr returns poison.
+#   * a PMP-config default's A field is stripped to OFF by reset_pmp() -> program PMP entry 0 with
+#     post-reset CSR writes (csrw pmpaddr0/pmpcfg0), the standard firmware pattern.
+#   * mie=0 (config) or the mtimecmp=0 timer interrupt fires on every U-mode instruction.
+#
+# Layout (thread base 0x80100000, all 4-byte insns):
+#   0x80100000  csrw pmpaddr0, x29  ; x29 = 0x207FFFFF (NAPOT [0x80000000,0x84000000))  [M-mode]
+#   0x80100004  csrw pmpcfg0,  x30  ; x30 = 0x1F       (A=NAPOT | R|W|X, entry 0)
+#   0x80100008  csrw mepc,     x28  ; x28 = 0x80100010 (the U-mode store)
+#   0x8010000c  mret               ; drop to User at 0x80100010
+#   0x80100010  sw x5,0(x7)        ; U-mode store to 0x84001000 -> PMP no-match -> DEFAULT-DENY ->
+#                                  ;   E_SAMO_Access_Fault -> M-handler @0x80200000   [THE STORE FAULT]
+#   0x80100014  addi x2,x2,1       ; runs after handler SKIP+mret (proves post-trap continuation)
+#   0x80100018  (end)
+# medeleg=0 keeps the fault in Machine mode. Handler sets x1=0x2A then mepc+=4 (skip) then mret.
+# Expected: x1 = 0x2A (the handler ran) AND x2 = 1 (execution continued past the trap).
+# `symbolic=["x"]` is present only to satisfy the harness; it is unused.
+#
+# Config: litmus/trap-scoping/riscv64_g2_trap_umode.toml
+arch = "RISCV"
+name = "trap-store-faultB1"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x29 = "0x00000000207FFFFF", x30 = "0x000000000000001F", x28 = "0x0000000080100010", x7 = "0x0000000084001000", x5 = "1" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x7)
+"""
+
+# Handler: prove it ran (x1=0x2A), skip the faulting store (mepc+=4), mret.
+# STATUS: the U-mode PMP-denied store access fault FIRES CORRECTLY and this handler runs -- verbatim
+# probe: exception_handler(["|User|", "...E_SAMO_Access_Fault... excinfo 0x84001000", "0x80100010"]).
+# But the test does NOT reach a verdict: it OOMs. The blocker is NOT the fault -- a MINIMAL U-mode
+# thread with NO fault (just this preamble + mret into User + a trailing 0x0000) also OOMs, while the
+# same config runs SHAPE A (M-mode) to `allowed (4 of 4)`. So the axiomatic harness does not terminate
+# a thread executing in User mode (zero_announce_exit / the trailing-0x0000 path forks explosively;
+# --pc-limit does not bound it). See model/M3_trap_storefault_2026-07-24.md. Needs a harness/source fix.
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	addi x1, x0, 0x2A
+	csrr t3, mepc
+	addi t3, t3, 4
+	csrw mepc, t3
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x1 = 0x2A"

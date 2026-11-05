@@ -1,0 +1,10 @@
+EW_AN_fina0	EW_AN_fina0 forbidden (0 of 5) 860ms	5s
+EW_AN_finb0	EW_AN_finb0 forbidden (0 of 5) 823ms	8s
+EW_BN_fin5	EW_BN_fin5 allowed (5 of 5) 3713ms	10s
+EW_BN_fin7	EW_BN_fin7 forbidden (0 of 5) 813ms	7s
+EW_BF_fin5	EW_BF_fin5 allowed (8 of 8) 45152ms	49s
+EW_BF_fin7	EW_BF_fin7 forbidden (0 of 8) 1957ms	8s
+EW_AN_fin56	EW_AN_fin56 allowed (5 of 5) 7880ms	13s
+EW_AF_fin56	EW_AF_fin56 allowed (9 of 9) 123023ms	127s
+EW_AF_fina0	EW_AF_fina0 forbidden (0 of 9) 2077ms	7s
+EW_AF_finb0	EW_AF_finb0 forbidden (0 of 9) 1822ms	5s

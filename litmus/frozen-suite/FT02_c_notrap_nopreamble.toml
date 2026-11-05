@@ -1,0 +1,30 @@
+# FT02 instance c - MP with NO trap AND NO M-mode preamble. The strongest control.
+#
+# Template FT02. Axis varied: presence of the privileged preamble itself. FT02_a / FT02_b still run
+# `csrw pmpaddr0/pmpcfg0/mepc` and an `mret`, so their executions contain CSRW and XRET events even
+# though they contain no TRAP. This instance deletes the preamble entirely: hart 0 is two bare
+# stores, so the execution contains NO abstract privileged event of any kind (no CSRW, no XRET, no
+# TRAP). It is the zero point of the whole family - whatever verdict FT01/FT02/FT03 produce, this
+# says what the same memory shape does with the privileged machinery completely absent.
+arch = "RISCV"
+name = "FT02_c_notrap_nopreamble"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	sw x5,0(x16)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

@@ -1,0 +1,30 @@
+# SHAPE B (U-mode PMP-denied store fault), GPRs seeded via [registers.defaults] (concrete) to
+# avoid the pmpWriteCfg fork explosion; assertion literal widened to 64-bit to avoid the z3 sort
+# mismatch. Config: /tmp/umode/cfg_gprdefaults.toml (repo: riscv64_g2_trap_umode_defaults.toml).
+arch = "RISCV"
+name = "trap-store-faultB1"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x7)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	addi x1, x0, 0x2A
+	csrr t3, mepc
+	addi t3, t3, 4
+	csrw mepc, t3
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x1 = 0x000000000000002A"

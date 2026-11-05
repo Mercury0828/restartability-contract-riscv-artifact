@@ -1,0 +1,26 @@
+diff --git a/model/postlude/step.sail b/model/postlude/step.sail
+index 4a56e22..fd212d8 100644
+--- a/model/postlude/step.sail
++++ b/model/postlude/step.sail
+@@ -279,8 +279,19 @@ function loop () : unit -> unit = {
+   while not(htif_done) do {
+     // This standalone loop always exits immediately out of waiting
+     // states.
+-    let stepped = try_step(step_no, true);
+-    if stepped then {
++    // RESTART-V / Isla litmus-harness fix (M3 "bug 2"): emit a
++    // sail_end_cycle() cycle boundary per *retired* instruction.
++    // `try_step()` returns `true` only when the hart is now WAITING
++    // (no step happened); a normally-retired instruction returns
++    // `false` (see the doc comment above and the C harness which reads
++    // this value as `is_waiting`).  The upstream code ended the Isla
++    // cycle on the `true` (waiting) branch, so in a straight-line
++    // thread every retired instruction collided in one Isla cycle group
++    // ("A single fetch-execute-decode cycle ... was associated with
++    // multiple instructions").  End the cycle when an instruction
++    // actually stepped instead (is_waiting == false).
++    let is_waiting = try_step(step_no, true);
++    if not(is_waiting) then {
+       step_no = step_no + 1;
+       if get_config_print_instr() then {
+         print_step()

@@ -1,0 +1,55 @@
+# FT11 instance a - MP across a trap, observer ordered by an ADDRESS DEPENDENCY.
+#
+# Template FT11 (observer-side ordering axis). Producer identical to the FT01 reference (DATA -> x,
+# trap, FLAG -> y). Observer:
+#     lw x18,0(x20)        <- read FLAG from y
+#     xor x22,x18,x18      <- artificial dependency (diy7 idiom; value is constant 0)
+#     add x23,x21,x22      <- FLAG's value flows syntactically into the second load's ADDRESS
+#     lw x19,0(x23)        <- read DATA from x
+#
+# Purpose: FT01 and FT03 order the observer with an explicit `fence rw,rw`. This replaces the fence
+# with RVWMO ppo rule r9 (`[M];addr;[M]`). PRIOR MEASUREMENT (model/M3_oracle_remeasure_2026-07-25.md
+# sec 3) established that this isla pipeline does NOT populate addr/data dependency edges for the
+# diy7 `xor xN,xN,xN` idiom - `MP+fence.rw.rw+addr` returned `allowed` where RVWMO says forbidden.
+# So this instance is a deliberate re-probe of that known tooling gap in the presence of a trap:
+# it fixes the producer-side variable and asks whether the observer-side ordering mechanism changes
+# anything. Its value is that it makes the fence-vs-dependency axis EXPLICIT in the trap family
+# rather than leaving the fence-only observer as an unexamined constant.
+arch = "RISCV"
+name = "FT11_a_obs_addr_dep"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	xor x22,x18,x18
+	add x23,x21,x22
+	lw x19,0(x23)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

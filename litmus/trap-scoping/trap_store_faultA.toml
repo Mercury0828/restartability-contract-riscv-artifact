@@ -1,0 +1,37 @@
+# SHAPE A: a STORE that faults (store access-fault) -> M-mode handler -> mret -> continue -> verdict.
+#
+# The first store targets 0x3000, which lies OUTSIDE every concrete PMA region
+# (ROM 0x1000..0x2000, CLINT 0x2000000..0x12000000, MainMemory 0x80000000..0x100000000).
+# pmaCheck (model/sys/mem.sail) returns Some(E_SAMO_Access_Fault) for the None() (no-region)
+# case, so `sw x5,0(x7)` raises a store access-fault deterministically (PMP is zeroed, pma_regions
+# is concrete -> no fork). We are in Machine mode (default cur_privilege; the ecall baseline trapped
+# as E_M_EnvCall), so the trap goes to the M-mode handler at mtvec=0x80200000.
+#
+# Handler policy = SKIP the faulting store: mepc += 4 (sw is a 4-byte insn; x5/x7 are not in the
+# RVC compressed reg set so no c.sw compression). mret then returns to the GOOD store `sw x5,0(x6)`
+# which writes 1 to the symbolic location x. Expected: *x = 1 (allowed).
+#
+# Config: litmus/trap-scoping/riscv64_g2_trap.toml (mtvec default + zeroed PMP).
+arch = "RISCV"
+name = "trap-store-faultA"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x6 = "x", x7 = "0x0000000000003000", x5 = "1" }
+code = """
+	sw x5,0(x7)
+	sw x5,0(x6)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	csrr t3, mepc
+	addi t3, t3, 4
+	csrw mepc, t3
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "*x = 1"

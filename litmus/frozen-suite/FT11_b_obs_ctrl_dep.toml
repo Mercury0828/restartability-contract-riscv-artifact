@@ -1,0 +1,52 @@
+# FT11 instance b - MP across a trap, observer ordered by a CONTROL DEPENDENCY.
+#
+# Template FT11. Axis varied vs FT11_a: the observer's ordering mechanism is a branch
+# (`bne x18,x0,LC00`) rather than an address dependency.
+#     lw x18,0(x20) ; bne x18,x0,LC00 ; LC00: lw x19,0(x21)
+#
+# Purpose: RVWMO's ctrl rule is `r11 = [M];ctrl;[W]` - control dependencies order a load before a
+# later STORE, NOT before a later LOAD. So on the architecture this observer is NOT ordered and the
+# MP outcome remains permitted. That makes it the interesting middle case between FT11_a (an
+# ordering mechanism the tooling drops) and FT01's fence (an ordering mechanism that works):
+# here the mechanism is faithfully modelled by isla - prior measurement confirms ctrl edges ARE
+# populated (`LB+ctrls forbidden (0 of 16)`) - yet architecturally contributes nothing to R->R.
+# It therefore separates "the tool lost the edge" from "the architecture has no edge", which
+# FT11_a alone cannot do.
+arch = "RISCV"
+name = "FT11_b_obs_ctrl_dep"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	bne x18,x0,LC00
+LC00:
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

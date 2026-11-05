@@ -1,0 +1,46 @@
+# FT09 instance c - remote observer does NOT see the post-replay store.
+#
+# Template FT09. Axis varied vs FT09_a: the ASSERTED observation (`1:x18 = 0` instead of 1) - the
+# observer's load reads the initial value even though hart 0's post-replay store to the same lane
+# has executed.
+#
+# Purpose: this is the non-vacuity partner of FT09_a. With no fence, no dependency and no
+# same-address program order between the two harts, RVWMO leaves the observer entirely free, so
+# BOTH FT09_a and FT09_c should be `allowed` - the load may or may not have happened first. If
+# FT09_c came back `forbidden`, the harness would be imposing an inter-hart ordering that RVWMO
+# does not have, and every `allowed` elsewhere in the family would need re-reading. It measures the
+# observer's freedom, which is the assumption FT01's `allowed` verdicts rest on.
+arch = "RISCV"
+name = "FT09_c_rfe_post_replay_unseen"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x7)
+	sw x5,0(x16)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x21 = "x" }
+code = """
+	lw x18,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 0"

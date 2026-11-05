@@ -1,0 +1,11 @@
+EW_AN_r00	EW_AN_r00 allowed (10 of 10) 22061ms	26s
+EW_AN_r06	EW_AN_r06 allowed (10 of 10) 31427ms	45s
+EW_AN_r50	EW_AN_r50 allowed (10 of 10) 19448ms	27s
+EW_AN_r56	EW_AN_r56 allowed (10 of 10) 15653ms	21s
+EW_BN_r575	EW_BN_r575 forbidden (0 of 20) 9268ms	14s
+EW_AF_r50	EW_AF_r50 allowed (18 of 18) 292884ms	300s
+EW_AF_r00	EW_AF_r00 allowed (18 of 18) 401318ms	408s
+EW_BF_r575	EW_BF_r575 error (31 of 32) 637820ms	645s
+EW_AF_r06	EW_AF_r06 allowed (18 of 18) 316003ms	322s
+EW_AF_r56	EW_AF_r56 allowed (18 of 18) 535144ms	540s
+DONE

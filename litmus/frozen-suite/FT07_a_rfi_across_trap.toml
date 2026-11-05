@@ -1,0 +1,42 @@
+# FT07 instance a - same-hart read-back of a PRE-TRAP store (rfi ACROSS the trap boundary).
+#
+# Template FT07. Shape (one hart):
+#     sw x=1                        <- store issued BEFORE the fault
+#     sw <PMP-denied>               <- TRAP -> handler -> XRET -> replay
+#     lw x18 <- x                   <- read-back AFTER the replay
+# Tested outcome: `0:x18 = 1 & 0:x1 = 0x2A`.
+#
+# The question: does a store that was in flight when the trap was taken remain visible to the SAME
+# hart after the trap/handler/replay round trip? This is `rfi` (internal read-from) with a trap
+# boundary interposed between the writer and the reader, which is the single-hart counterpart of
+# the RESTART-V [P-RESUME] claim. RVWMO's r1/po-loc coherence forces the load to read the store, so
+# a verdict other than `allowed` would mean the trap round trip lost the write.
+arch = "RISCV"
+name = "FT07_a_rfi_across_trap"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	lw x18,0(x16)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x18 = 1 & 0:x1 = 0x000000000000002A"

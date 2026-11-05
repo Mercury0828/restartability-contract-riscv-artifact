@@ -1,0 +1,41 @@
+# FT04 instance b - SB with NO trap. Control for FT04_a.
+#
+# Template FT04, trap axis = absent. Byte-for-byte FT04_a with the PMP-denied `sw x5,0(x7)`
+# deleted, so hart 0's `sw x` and `lw y` are separated by nothing but program order. Any verdict
+# difference against FT04_a is attributable to the trap boundary in the W->R slot.
+arch = "RISCV"
+name = "FT04_b_sb_notrap"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x20 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	lw x18,0(x20)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x17 = "y", x21 = "x" }
+code = """
+	sw x5,0(x17)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x18 = 0 & 1:x19 = 0"

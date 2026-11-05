@@ -1,0 +1,44 @@
+# FT04 instance c - SB across a trap, PLUS an explicit `fence rw,rw` on hart 0. Calibration.
+#
+# Template FT04, fence axis = present on both harts. With `fence rw,rw` on hart 0 as well, RVWMO
+# forbids the SB outcome outright. This calibrates the SB family the way FT03 calibrates the MP
+# family: it shows the pipeline CAN reach `forbidden` on this exact shape, config and observer, so
+# an `allowed` on FT04_a/FT04_b is a real absence of ordering rather than a failure to explore.
+arch = "RISCV"
+name = "FT04_c_sb_trap_fence"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x20 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	fence rw,rw
+	sw x5,0(x7)
+	lw x18,0(x20)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x17 = "y", x21 = "x" }
+code = """
+	sw x5,0(x17)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x18 = 0 & 1:x19 = 0"

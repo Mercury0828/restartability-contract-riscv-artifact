@@ -1,0 +1,50 @@
+# FT10 instance b - the HANDLER's memory store placed BEFORE its CSR repair write.
+#
+# Template FT10. Axis varied vs FT10_a: the ORDER of the handler's memory store relative to the
+# `csrw pmpaddr0` repair.
+#     FT10_a:  lui/addi ; csrw pmpaddr0 ; sw y=1 ; addi x1 ; mret
+#     FT10_b:  sw y=1 ; lui/addi ; csrw pmpaddr0 ; addi x1 ; mret
+#
+# This is the only pair in the suite that moves a CSRW event across a memory event WITHOUT moving
+# any TRAP or XRET event: both instances contain exactly one TRAP, one XRET and the same three
+# memory accesses, and differ only in whether the handler's store is po-before or po-after the
+# `sail_write_CSR`. So it isolates the CSRW event's ordering contribution specifically - which is
+# a distinct question from the trap boundary's, and is the reason `sail_write_CSR` is listed in the
+# config's `in_program_order` alongside `sail_trap` and `sail_mret`.
+arch = "RISCV"
+name = "FT10_b_handler_store_before_csrw"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	sw x5,0(x17)
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

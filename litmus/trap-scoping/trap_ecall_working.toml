@@ -1,0 +1,37 @@
+# Minimal single-hart synchronous trap that runs to a REAL VERDICT (not timeout).
+#   ecall -> M-mode handler (advance mepc past ecall) -> mret -> store x:=1.
+# Verbatim: `trap-ecall allowed (4 of 4) 234ms` with configs/../riscv64_g2_trap.toml.
+#
+# Two things that make this run to completion (both learned the hard way; see
+# model/M3_trap_pma_2026-07-24.md):
+#   1. mtvec is set in the CONFIG's [registers.defaults] (riscv64_g2_trap.toml), NOT via a
+#      litmus `reset = {"mtvec.bits"=...}`. The litmus/config `reset` path is DEAD in this
+#      snapshot (reset_registers builtin is never called by zmain), so a litmus reset leaves
+#      mtvec SYMBOLIC -> symbolic trap vector -> symbolic handler PC -> fetch forks/timeout.
+#   2. The handler scratch register must NOT collide with a register the main code relies on.
+#      The obvious `csrr t0, mepc` is WRONG here: t0 == x5, which holds the store data `1`;
+#      the handler would overwrite x5 with mepc+4 and the store would write 0x80100004, giving
+#      `forbidden (0 of 4)`. We use t3 (x28), which the test does not touch.
+arch = "RISCV"
+name = "trap-ecall"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x6 = "x", x5 = "1" }
+code = """
+	ecall
+	sw x5,0(x6)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	csrr t3, mepc
+	addi t3, t3, 4
+	csrw mepc, t3
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "*x = 1"

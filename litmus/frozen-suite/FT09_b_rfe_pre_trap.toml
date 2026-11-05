@@ -1,0 +1,45 @@
+# FT09 instance b - a remote observer reads a store issued BEFORE the trap (rfe).
+#
+# Template FT09. Axis varied vs FT09_a: WHICH SIDE of the trap boundary the observed store sits on.
+#   Hart 0: sw x=1 ; <PMP fault -> TRAP -> handler -> XRET -> replay>
+#   Hart 1: lw x18 <- x
+# Tested outcome: `1:x18 = 1`.
+#
+# Purpose: a trap boundary that squashed in-flight work could plausibly discard a store that had
+# not yet reached memory when the fault was taken. This asks whether a pre-trap store survives the
+# trap/handler/replay round trip as far as a DIFFERENT hart is concerned. Together with FT09_a it
+# brackets the boundary from both sides with the same minimal single-load observer.
+arch = "RISCV"
+name = "FT09_b_rfe_pre_trap"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x21 = "x" }
+code = """
+	lw x18,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1"

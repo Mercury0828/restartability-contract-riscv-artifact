@@ -1,0 +1,51 @@
+# FT08 instance a - COHERENCE (coWW + coRR) spanning the trap boundary, INVERTED observation.
+#
+# Template FT08. Shape:
+#   Hart 0: sw x=1 ; <PMP fault -> TRAP -> handler -> XRET -> replay> ; sw x=2
+#           (two stores to the SAME lane `x`, separated by the trap boundary => coWW across it)
+#   Hart 1: lw x18 <- x ; lw x19 <- x            (two po-ordered loads of the same lane => coRR)
+# Tested outcome: `1:x18 = 2 & 1:x19 = 1` - the observer sees the LATER value first and then the
+# EARLIER one.
+#
+# This is forbidden by RVWMO's sc-per-location axiom (`acyclic co|rf|fr|po-loc`): the cycle is
+# W(x=2) -rf-> R(2) -po-loc-> R(1) -fr-> W(x=2). It is the family's coherence calibration: it must
+# come back with the opposite verdict from FT08_b (which asserts the same two loads in the
+# coherence-respecting order). Note the observer here uses NO fence and NO dependency - coherence
+# is the only thing constraining it, which is exactly the point.
+arch = "RISCV"
+name = "FT08_a_coRR_inverted"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	addi x22, x0, 2
+	sw x22,0(x16)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x21 = "x" }
+code = """
+	lw x18,0(x21)
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "unsat"
+assertion = "1:x18 = 2 & 1:x19 = 1"

@@ -1,0 +1,29 @@
+# FT12 instance c - NO-FAULT REFERENCE run of the LB shape.
+#
+# Template FT12. Axis varied vs FT12_a / FT12_b: the memory SHAPE (load buffering). Bare two-hart
+# LB - `lw y ; sw x=1` against `lw x ; sw y=1` - with no preamble, no PMP, no handler, no fault.
+#
+# Baseline for the FT05 family. With FT12_a (MP) and FT12_b (SB) it gives the suite one no-fault
+# reference per multi-hart shape used anywhere in FT01-FT11, so every trap verdict has a
+# same-config, same-cat, privilege-free counterpart to be read against.
+arch = "RISCV"
+name = "FT12_c_lb_reference"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x20 = "y" }
+code = """
+	lw x18,0(x20)
+	sw x5,0(x16)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x17 = "y", x21 = "x" }
+code = """
+	lw x19,0(x21)
+	sw x5,0(x17)
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x18 = 1 & 1:x19 = 1"

@@ -1,0 +1,4 @@
+DG_AN_fin_a0	DG_AN_fin_a0 allowed (12 of 12) 67979ms	73s
+DG_AN_fin_a5	DG_AN_fin_a5 allowed (12 of 12) 40916ms	48s
+2+2W+fence.rw.rws	NO-SUMMARY-LINE rc=0 last: 2+2W+fence.rw.rws forbidden (0 of 4) 11123ms ....................................................... [93m[1m?[0m 	15s
+R+fence.rw.rw+po	NO-SUMMARY-LINE rc=0 last: R+fence.rw.rw+po allowed (4 of 4) 11983ms .......................................................... [93m[1m?[0m 	16s

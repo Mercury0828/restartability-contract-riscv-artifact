@@ -1,0 +1,53 @@
+# S1v2_control_fence.toml - RESTART-V S1-v2 differential, CALIBRATION control.
+#
+# S1v2_trap_mp.toml (trap and all) plus ONE extra instruction: an explicit `fence rw,rw` between
+# hart 0's DATA store and its FLAG store. RVWMO ppo rule r4 (fence-rw-rw) then orders
+# DATA_W -> FLAG_W under BOTH completions, so the MP cycle is closed regardless of trap_drain.
+#
+# EXPECTED: forbidden under riscv_s1v2_nodrain.cat AND under riscv_s1v2_drain.cat.
+#
+# This calibrates the harness: it proves the pipeline CAN reach `forbidden` on this litmus shape
+# and this config, so a `forbidden` from the drain cat on S1v2_trap_mp.toml is a real
+# cycle-closing result and not an artefact, and an `allowed` from the nodrain cat on
+# S1v2_trap_mp.toml is a real absence of ordering and not a failure to explore.
+#
+# mepc = x28 = 0x80100010 still lands on the DATA store: the fence is inserted AFTER it, so the
+# 4-instruction (16-byte) preamble is unchanged.
+arch = "RISCV"
+name = "S1v2_control_fence"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	fence rw,rw
+	sw x5,0(x7)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

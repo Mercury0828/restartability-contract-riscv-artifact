@@ -1,0 +1,44 @@
+# FT03 instance b - MP with an explicit `fence rw,rw` and NO trap.
+#
+# Template FT03. Axis varied: trap present/absent, holding the producer fence fixed. The producer
+# is `sw DATA ; fence rw,rw ; sw FLAG` with the faulting store removed. This separates the
+# fence's ordering contribution from the trap's: if this is `forbidden` while the trapless,
+# fenceless FT02 instances are `allowed`, the fence alone closes the MP cycle, so a `forbidden`
+# on the fence+trap instances cannot be attributed to the trap.
+arch = "RISCV"
+name = "FT03_b_fence_rwrw_notrap"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	fence rw,rw
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

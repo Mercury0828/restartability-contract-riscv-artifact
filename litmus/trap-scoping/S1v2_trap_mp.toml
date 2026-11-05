@@ -1,0 +1,86 @@
+# S1v2_trap_mp.toml - RESTART-V S1-v2 differential, PRIMARY test.
+#
+# 2-hart message passing with a REAL M-mode TRAP between the producer's two stores.
+# The trap machinery (preamble, PMP-denied store, handler, mret-without-advancing-mepc
+# replay) is lifted VERBATIM from the working litmus/trap-scoping/trap_store_faultB2_replay.toml,
+# so it actually executes; the only additions are the DATA store before the trap and the
+# FLAG store after it, plus a reader hart.
+#
+#   Hart 0 (producer, M-mode preamble then U-mode):
+#     csrw pmpaddr0,x29 ; csrw pmpcfg0,x30 ; csrw mepc,x28 ; mret     <- install PMP entry 0
+#                                                                       = [0x80000000,0x84000000)
+#                                                                       and drop to U-mode at x28
+#                                                                       = 0x80100010
+#     sw x5,0(x16)   DATA=1 -> X                      (inside PMP entry 0: allowed)
+#     sw x5,0(x7)    -> 0x84001000, OUTSIDE entry 0   => E_SAMO_Access_Fault
+#                                                     => abstract sail_trap event  (TRAP)
+#                                                     => M-handler widens pmpaddr0 to
+#                                                        [0x80000000,0x88000000), sets x1=0x2A,
+#                                                        mret WITHOUT advancing mepc
+#                                                     => abstract sail_mret event   (XRET)
+#                                                     => the SAME store re-executes and commits
+#     sw x5,0(x17)   FLAG=1 -> Y
+#
+#   Hart 1 (consumer, stays in M-mode - M-mode accesses are not PMP-denied when no entry matches):
+#     lw x18,0(x20)  read FLAG from Y
+#     fence rw,rw
+#     lw x19,0(x21)  read DATA from X
+#
+# The consumer's two loads are ordered by an EXPLICIT fence rw,rw, deliberately: on this
+# isla+riscv.cat pipeline control dependencies order R->W only and addr/data deps are dropped by
+# the footprint extractor (model/S1_differential_result_2026-07-25.md sec 3). So the differential
+# is attributable SOLELY to producer-side ordering across the trap boundary.
+#
+# NON-SC OUTCOME TESTED:  FLAG seen (1:x18 = 1)  AND  DATA not seen (1:x19 = 0).
+#   - riscv_s1v2_nodrain.cat (stock RVWMO): the producer's DATA and FLAG stores are unordered
+#       => the cycle DATA_W -po-> FLAG_W -rfe-> R_flag -ppo(fence)-> R_data -fr-> DATA_W
+#          is NOT closed (no ppo edge DATA_W -> FLAG_W)  => ALLOWED.
+#   - riscv_s1v2_drain.cat (+ trap_drain): trap_drain supplies exactly the missing edge
+#       DATA_W -> FLAG_W, because DATA_W is po-before the TRAP and FLAG_W is po-after the XRET
+#       => cycle closed => FORBIDDEN.
+#
+# REGISTER HYGIENE: x16/x17/x18/x19/x20/x21 are all outside x8-x15, so the assembler cannot emit
+# compressed c.sw/c.lw forms (sys_enable_rvc = true in the config). This keeps the preamble
+# exactly 4 x 4 bytes so mepc = x28 = 0x80100010 lands on the DATA store.
+#
+# CONFIG: litmus/trap-scoping/riscv64_g2_trap_umode_ipo.toml (REQUIRED). It is the CSR-source-
+# seeding U-mode/PMP config with `in_program_order` extended to the three abstract trap events;
+# without that extension isla's po does not relate TRAP/XRET to anything and trap_drain is
+# identically empty (see that file's header and the archive doc).
+arch = "RISCV"
+name = "S1v2_trap_mp"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	sw x5,0(x17)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

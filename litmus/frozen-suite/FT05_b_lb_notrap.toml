@@ -1,0 +1,40 @@
+# FT05 instance b - LB with NO trap. Control for FT05_a.
+#
+# Template FT05, trap axis = absent. FT05_a with the PMP-denied `sw x5,0(x7)` deleted, so hart 0's
+# `lw y` and `sw x` are separated by nothing but program order. Isolates the trap boundary's
+# contribution to the R->W slot.
+arch = "RISCV"
+name = "FT05_b_lb_notrap"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x20 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	lw x18,0(x20)
+	sw x5,0(x16)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x17 = "y", x21 = "x" }
+code = """
+	lw x19,0(x21)
+	sw x5,0(x17)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x18 = 1 & 1:x19 = 1"

@@ -1,0 +1,4 @@
+using c4_vl4_k3.trace.log for trace output.
+HTIF located at 0x80002000
+Entry point: 0x80000000
+SUCCESS

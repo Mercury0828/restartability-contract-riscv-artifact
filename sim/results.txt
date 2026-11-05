@@ -1,0 +1,10 @@
+c1_vl2_k0 exit=0
+SUCCESS
+c2_vl2_k1 exit=0
+SUCCESS
+c3_vl4_k2 exit=0
+SUCCESS
+c4_vl4_k3 exit=0
+SUCCESS
+c5_vl4_ref exit=0
+SUCCESS

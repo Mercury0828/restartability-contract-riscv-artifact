@@ -1,0 +1,35 @@
+# SHAPE B2 - the FAITHFUL RESTART-V shape: fault -> repair -> REPLAY.
+# U-mode store to 0x84001000 is PMP-denied (entry0 NAPOT covers only [0x80000000,0x84000000)).
+# The M-handler REPROGRAMS pmpaddr0 to a wider NAPOT [0x80000000,0x88000000) (covers 0x84001000),
+# sets a sentinel x1=0x2A, and mret WITHOUT advancing mepc -> the SAME store re-executes, now PMP
+# ALLOWS it, and it succeeds. A following U-mode load reads back the replayed value.
+# t6 (x31) is loaded concretely (lui/addi) so the pmpaddr write does not re-explode; x7 (store
+# address) is left untouched so the replay targets the same address.
+arch = "RISCV"
+name = "trap-store-faultB2-replay"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x7)
+	lw x2,0(x7)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x2 = 0x0000000000000001 & 0:x1 = 0x000000000000002A"

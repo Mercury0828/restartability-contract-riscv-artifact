@@ -1,0 +1,50 @@
+# FT04 instance a - STORE BUFFERING (SB) across a trap boundary.
+#
+# Template FT04. Shape:
+#   Hart 0 (M-mode preamble, then U-mode):  sw x=1 ; <PMP fault -> TRAP -> handler -> XRET ->
+#                                            replay> ; lw x18 <- y
+#   Hart 1 (no preamble):                   sw y=1 ; fence rw,rw ; lw x19 <- x
+# Tested outcome: BOTH loads read 0 (`0:x18 = 0 & 1:x19 = 0`) - the classic non-SC SB result.
+#
+# What it probes that FT01 does not: SB's cycle is closed by W->R ordering on each hart, not W->W.
+# So this asks whether the trap boundary contributes a store-to-LOAD drain (a store buffer that is
+# flushed at trap entry would order hart 0's `sw x` before its later `lw y`), which is a different
+# question from FT01's store-to-store one. Hart 1 carries an explicit `fence rw,rw` so the only
+# unordered side is hart 0's trap-spanning W->R pair.
+arch = "RISCV"
+name = "FT04_a_sb_trap"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x20 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+	lw x18,0(x20)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x17 = "y", x21 = "x" }
+code = """
+	sw x5,0(x17)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x18 = 0 & 1:x19 = 0"

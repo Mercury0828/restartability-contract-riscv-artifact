@@ -1,0 +1,48 @@
+# S1_mp.toml - RESTART-V S1 differential, PRIMARY test.
+#
+# 2-hart message-passing (MP). Structurally this is the known-good
+# rvwmo-suite/MP+po+fence.rw.rw.toml (which runs and returns a verdict);
+# reused verbatim as the skeleton so it EXECUTES, with commentary added.
+#
+#   Hart 0 (producer):  DATA=1 to X ; then  FLAG=1 to Y   (two plain stores, po only)
+#   Hart 1 (consumer):  read FLAG from Y ; fence rw,rw ; read DATA from X
+#
+# The consumer's two loads are ordered by an EXPLICIT fence rw,rw. This is
+# deliberate: on this isla+riscv.cat pipeline, control dependencies do NOT
+# order R->R (RVWMO ctrl orders R->W only) and addr/data deps are dropped by
+# the footprint extractor (see M3_oracle_remeasure_2026-07-25.md sec 3). A
+# fence is the reliable way to order the reader, so the differential is
+# attributable SOLELY to the producer-side store->store ordering.
+#
+# Non-SC outcome tested:  FLAG seen (1:x5=1)  AND  DATA not seen (1:x7=0).
+#   - Under nodrain (stock RVWMO): producer's two stores are NOT ordered
+#       => outcome ALLOWED. The (possibly replayed) DATA store is a plain,
+#       weakly-ordered W - no free trap fence.
+#   - Under drain (RVWMO + [W];po;[W]): producer's stores ARE ordered, and
+#       the consumer is fence-ordered => full MP cycle closed => FORBIDDEN.
+#
+# The DATA store here STANDS FOR the fault->repair->replay committed store:
+# trap_store_faultB2_replay.toml shows that store commits as an ORDINARY W,
+# so an ordinary MP producer store is a faithful proxy for it.
+arch = "RISCV"
+name = "S1_mp"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x7 = "y", x6 = "x", x5 = "1" }
+code = """
+	sw x5,0(x6)
+	sw x5,0(x7)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x8 = "x", x6 = "y" }
+code = """
+	lw x5,0(x6)
+	fence rw,rw
+	lw x7,0(x8)
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x5 = 1 & 1:x7 = 0"

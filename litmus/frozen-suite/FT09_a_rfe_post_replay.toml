@@ -1,0 +1,46 @@
+# FT09 instance a - a remote observer reads a store issued AFTER the replay (rfe).
+#
+# Template FT09. Shape:
+#   Hart 0: <PMP fault -> TRAP -> handler -> XRET -> replay> ; sw x=1
+#   Hart 1: lw x18 <- x
+# Tested outcome: `1:x18 = 1` - the observer DOES see the post-replay store.
+#
+# Purpose: the FT06/FT07 replay tests are single-hart, so they can only show the replay is visible
+# to the hart that took the trap. This is the minimal multi-hart witness that a store issued after
+# the trap round trip enters the shared memory order at all and is externally readable (`rfe`).
+# The observer is a single unordered load, so this instance carries no ordering claim - only a
+# visibility one - which is what keeps it independent of FT01.
+arch = "RISCV"
+name = "FT09_a_rfe_post_replay"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x7)
+	sw x5,0(x16)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x21 = "x" }
+code = """
+	lw x18,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1"

@@ -1,0 +1,112 @@
+diff --git a/model/extensions/I/base_insts.sail b/model/extensions/I/base_insts.sail
+index 2e0b772..7a344fc 100644
+--- a/model/extensions/I/base_insts.sail
++++ b/model/extensions/I/base_insts.sail
+@@ -583,6 +583,8 @@ function clause execute MRET() = {
+     set_next_pc(prepare_xret_target(Machine));
+ 
+     xret_callback(true);
++    // RESTART-V M3 G5: emit a Cat-visible abstract xret event (mirrors sail_barrier).
++    sail_mret(true);
+     RETIRE_SUCCESS
+   }
+ }
+diff --git a/model/extensions/Zicsr/zicsr_insts.sail b/model/extensions/Zicsr/zicsr_insts.sail
+index e20466f..dc48a55 100644
+--- a/model/extensions/Zicsr/zicsr_insts.sail
++++ b/model/extensions/Zicsr/zicsr_insts.sail
+@@ -86,6 +86,8 @@ function doCSR(csr : csreg, rs1_val : xlenbits, rd : regidx, op : csrop, access_
+             Ok(final_val) => {
+               X(rd) = dest_val;
+               csr_write_callback(csr, final_val);
++              // RESTART-V M3 G5: Cat-visible abstract CSR-write event (mirrors sail_barrier).
++              sail_write_CSR(csr);
+               RETIRE_SUCCESS
+             },
+             Err(()) => Illegal_Instruction(),
+diff --git a/model/riscv.sail_project b/model/riscv.sail_project
+index 7cc0ae1..ef16035 100644
+--- a/model/riscv.sail_project
++++ b/model/riscv.sail_project
+@@ -31,6 +31,7 @@ core {
+     core/mem_type_utils.sail,
+     core/csr_begin.sail,
+     core/callbacks.sail,
++    core/restartv_trap_events.sail,
+     core/reg_type.sail,
+     core/regs.sail,
+     core/pc_access.sail,
+diff --git a/model/sys/sys_control.sail b/model/sys/sys_control.sail
+index 586d471..0b648ce 100644
+--- a/model/sys/sys_control.sail
++++ b/model/sys/sys_control.sail
+@@ -183,6 +183,9 @@ function track_trap(p : Privilege, is_interrupt : bool, cause : exc_code) -> uni
+   };
+ 
+   trap_callback(is_interrupt, cause);
++
++  // RESTART-V M3 G5: emit a Cat-visible abstract trap event (mirrors sail_barrier).
++  sail_trap(cause);
+ }
+ 
+ // handle exceptional ctl flow by updating nextPC and operating privilege
+diff --git a/model/core/restartv_trap_events.sail b/model/core/restartv_trap_events.sail
+new file mode 100644
+index 0000000..6e71ed8
+--- /dev/null
++++ b/model/core/restartv_trap_events.sail
+@@ -0,0 +1,54 @@
++// =======================================================================================
++// RESTART-V M3 / E-track gap G5: abstract (Cat-visible) trap / xret / CSR-write events.
++//
++// The upstream Sail RISC-V model emits exactly ONE abstract concurrency-interface event
++// that Isla surfaces to the axiomatic (Cat) layer: `sail_barrier`. Trap entry, xret (mret/
++// sret) and CSR writes are ordinary Sail function/register effects -> Isla `other_events`
++// (include_in_smt = false) -> invisible to the Cat model. That is the whole G5 gap.
++//
++// The mechanism that makes `sail_barrier` Cat-visible is the concurrency-interface `outcome`
++// with ONLY an `emulator` implementation (no `isla`/`emulator_or_isla` impl): the isla-sail
++// `instantiate_outcomes["isla"]` rewrite then finds no isla implementation and marks the
++// call `abstract` in the JIB IR (`abstract z... = "..."`), which Isla lowers to
++// `Event::Abstract { primitive = true }` -> smt_events -> Cat-visible.
++//
++// We declare three such outcomes mirroring `sail_barrier` EXACTLY (same shape, same
++// `impl emulator(_) = ()`), so isla-sail marks them abstract for the isla target while the
++// C emulator keeps a no-op. Names are chosen to match `litmus/cat/riscv_trap.cat`'s
++// accessors (`is sail_mret`, `is sail_trap`, `is sail_write_CSR`) so that G5's aspirational
++// vocabulary populates with no Cat edit.
++//
++// SPDX-License-Identifier: BSD-2-Clause
++// =======================================================================================
++
++$sail_internal
++
++$include <concurrency_interface/common.sail>
++
++// Synchronous trap / interrupt entry. Argument: the trap cause (exc_code = bits(6)).
++outcome sail_trap : 'trap_id -> unit
++with
++  'trap_id : Type
++= {
++    impl emulator(_) = ()
++}
++
++// xret effect (mret <-> true, sret <-> false).
++outcome sail_mret : 'xret_id -> unit
++with
++  'xret_id : Type
++= {
++    impl emulator(_) = ()
++}
++
++// Architectural CSR write. Argument: the CSR address (csreg = bits(12)).
++outcome sail_write_CSR : 'csr_id -> unit
++with
++  'csr_id : Type
++= {
++    impl emulator(_) = ()
++}
++
++instantiation sail_trap with 'trap_id = exc_code
++instantiation sail_mret with 'xret_id = bool
++instantiation sail_write_CSR with 'csr_id = csreg

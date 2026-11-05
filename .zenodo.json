@@ -1,0 +1,11 @@
+{
+  "title": "Artifact: Restarting a Faulting RISC-V Vector Store: A Contract and a Mechanized Refinement under RVWMO",
+  "upload_type": "software",
+  "description": "Artifact of the paper 'Restarting a Faulting RISC-V Vector Store: A Contract and a Mechanized Refinement under RVWMO' (submitted to Formal Methods in System Design). It contains the Rocq development (51 files, Coq 8.15) with verify.sh, the 100 Isla litmus tests with their verbatim results, the Sail patches and the recipe for the Isla model, and the simulator runs of the fault, repair and replay path.",
+  "creators": [
+    {"name": "Shen, Jiachen", "affiliation": "University of Houston", "orcid": "0000-0002-7233-497X"},
+    {"name": "Zhong, Hui", "affiliation": "Miami University", "orcid": "0009-0005-7952-007X"}
+  ],
+  "license": "MIT",
+  "keywords": ["RISC-V", "vector extension", "weak memory models", "precise exceptions", "refinement", "Rocq"]
+}

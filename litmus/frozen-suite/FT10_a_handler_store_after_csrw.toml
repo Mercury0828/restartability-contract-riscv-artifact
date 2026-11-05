@@ -1,0 +1,55 @@
+# FT10 instance a - the HANDLER performs a memory store, placed AFTER its CSR repair write.
+#
+# Template FT10 (handler CSR-write ordering vs a memory access). Shape:
+#   Hart 0: sw x=1                       <- DATA, in U-mode, before the fault
+#           sw <PMP-denied>              <- TRAP
+#             handler: csrw pmpaddr0 (the repair)  ...then...  sw y=1   <- FLAG, in M-MODE
+#             handler: mret                        <- XRET, store replays
+#   Hart 1: lw x18 <- y ; fence rw,rw ; lw x19 <- x
+# Tested outcome: `1:x18 = 1 & 1:x19 = 0` - the FLAG written by the HANDLER is seen while the DATA
+# written by the faulting hart before the trap is not.
+#
+# What this probes that FT01 does not: in FT01 both DATA and FLAG are U-mode stores from the same
+# instruction stream. Here the FLAG store is executed by the M-mode trap handler and is po-ordered
+# after a `csrw` to pmpaddr0 (a `sail_write_CSR` abstract event). So the question becomes whether
+# the handler's own memory access is ordered against the interrupted stream's earlier access, i.e.
+# whether the trap-entry boundary orders across a PRIVILEGE CHANGE, and whether an intervening CSRW
+# event contributes anything. `x17` is bound on thread 0, so the handler - which runs on hart 0 -
+# has the FLAG address available.
+arch = "RISCV"
+name = "FT10_a_handler_store_after_csrw"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "x", x17 = "y" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	sw x5,0(x16)
+	sw x5,0(x7)
+"""
+
+[thread.1]
+init = { pc_reset_address = "0x0000000080110000", x20 = "y", x21 = "x" }
+code = """
+	lw x18,0(x20)
+	fence rw,rw
+	lw x19,0(x21)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	sw x5,0(x17)
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "sat"
+assertion = "1:x18 = 1 & 1:x19 = 0"

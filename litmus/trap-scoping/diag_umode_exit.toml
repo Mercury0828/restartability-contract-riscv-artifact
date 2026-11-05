@@ -1,0 +1,22 @@
+# MINIMAL no-fault U-mode diagnostic. Preamble (M-mode) programs PMP entry 0 to ALLOW the
+# whole region (RWX), then mret down to User at 0x80100010, run one benign register op, then
+# fall into the trailing 0x0000 which SHOULD trigger zero_announce_exit / model exit.
+# No memory access, no fault. If this OOMs while SHAPE A (M-mode) verdicts, the blocker is the
+# U-mode termination path itself. Config: riscv64_g2_trap_umode.toml.
+arch = "RISCV"
+name = "diag-umode-exit"
+symbolic = ["x"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x29 = "0x00000000207FFFFF", x30 = "0x000000000000001F", x28 = "0x0000000080100010" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	addi x1, x0, 0x2A
+"""
+
+[final]
+expect = "sat"
+assertion = "0:x1 = 0x2A"

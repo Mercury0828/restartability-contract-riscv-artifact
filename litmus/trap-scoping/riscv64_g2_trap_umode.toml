@@ -1,0 +1,137 @@
+# SHAPE B config: U-mode + a PMP that DENIES the store target.
+#
+# Derived from riscv64_g2_trap.toml (mtvec default + concrete PMP) with three deltas:
+#   1. cur_privilege = "User"  -> the program starts in U-mode (enum literal; z-encodes to zUser).
+#   2. medeleg = "{ bits = 0 }" -> the store-access-fault is NOT delegated to S-mode; it stays M-mode
+#      (medeleg has no [registers.defaults] entry otherwise and the reset path is dead, so it would be
+#      symbolic and fork the delegation decision).
+#   3. PMP is programmed BY THE LITMUS PREAMBLE VIA CSR WRITES, not here. Reason: reset_pmp()
+#      (model/pmp/pmp_control.sail, run at model init) forces every entry's A=OFF and L=0, keeping only
+#      the R/W/X bits -- probe-confirmed: a config default of pmpcfg 0x1F (A=NAPOT|RWX) is stomped to
+#      0x07 (A=OFF) -> PMP_NoMatch -> the region never matches. So the config leaves pmpcfg_n/pmpaddr_n
+#      = 0 and the U-mode litmus's M-mode preamble does `csrw pmpaddr0,<napot>; csrw pmpcfg0,0x1F`
+#      (the standard firmware pattern; a post-reset CSR write of A=NAPOT is NOT stripped) to install a
+#      single NAPOT entry 0 = [0x80000000,0x84000000) RWX. A U-mode access inside it matches entry 0;
+#      one outside hits the pmpCheck `priv != Machine` default-deny -> E_SAMO_Access_Fault.
+#
+#   NAPOT region math: base=0x80000000, size=2^26=64MB -> pmpaddr = (base>>2)|(2^(26-3)-1)
+#   = 0x20000000 | 0x7FFFFF = 0x207FFFFF ; decodes to [0x80000000, 0x84000000). Covers the thread code
+#   (0x80100000), the handler (0x80200000), and a good-store target in RAM; the fault target 0x84001000
+#   is PMA-valid main memory JUST ABOVE the region, so PMA allows and PMP is the SOLE fault cause.
+pc = "PC"
+comment_prefixes = ["#", "//"]
+zero_announce_exit = true
+default_sizeof = 4
+in_program_order = ["sail_barrier"]
+
+[[toolchain]]
+name = "macos-riscv64"
+os = "macos"
+arch = "aarch64"
+assembler = "riscv64-elf-as"
+objdump = "riscv64-elf-objdump"
+nm = "riscv64-elf-nm"
+linker = "riscv64-elf-ld"
+
+[[toolchain]]
+name = "default"
+assembler = "riscv64-linux-gnu-as -march=rv64imac"
+objdump = "riscv64-linux-gnu-objdump"
+linker = "riscv64-linux-gnu-ld"
+nm = "riscv64-linux-gnu-nm"
+
+[mmu]
+page_table_base = "0x300000"
+page_size = "4096"
+s2_page_table_base = "0x300000"
+s2_page_size = "4096"
+
+[threads]
+base = "0x80100000"
+top = "0x80300000"
+stride = "0x10000"
+
+[symbolic_addrs]
+base = "0x80310000"
+top = "0x80410000"
+stride = "0x10"
+
+[registers.defaults]
+vstart = "0x0000000000000000"
+vl = "0x0000000000000000"
+vtype = "{ bits = 0x8000000000000000 }"
+satp = "0x0000000000000000"
+misa = "{ bits = 0x0000000000000000 }"
+# mstatus.SXL=UXL=0b10 (RV64) in bits [35:34]/[33:32] -> 0xA00000000. CRITICAL for U-mode:
+# translationMode() (sys/vmem.sail:247, taken for any non-Machine access) reads architecture(Supervisor)
+# = mstatus[SXL]; with SXL=0 architecture_bits is invalid -> internal_error -> translateAddr returns
+# arbitrary/poison on the first U-mode instruction fetch (probe-confirmed). MPP stays 00 (=User) so the
+# preamble mret drops to User. The Machine-mode path returns Bare without reading SXL, which is why the
+# ecall/SHAPE-A tests worked with mstatus=0.
+mstatus = "{ bits = 0x0000000A00000000 }"
+mtvec = "{ bits = 0x0000000080200000 }"
+medeleg = "{ bits = 0x0000000000000000 }"
+mideleg = "{ bits = 0x0000000000000000 }"
+# mie=0 disables ALL interrupt enables. CRITICAL for U-mode: mtimecmp=0 makes mip[MTI] permanently
+# pending (platform.sail:142 `mip[MTI] = mtimecmp <= mtime`), and in U-mode M-interrupts are unmaskable
+# by mstatus.MIE, so without this the timer interrupt fires on every U-mode instruction -> infinite
+# interrupt loop -> timeout. dispatchInterrupt gates on `mip & mie` (sys_control.sail:112), so mie=0
+# (which reset_sys does NOT stomp) suppresses the loop. mtimecmp is also raised to max as defence.
+mie = "{ bits = 0x0000000000000000 }"
+mip = "{ bits = 0x0000000000000000 }"
+cur_privilege = "User"
+mcountinhibit = " { bits = 0x00000000 }"
+mcyclecfg = "{ bits = 0x0000000000000000 }"
+minstretcfg = "{ bits = 0x0000000000000000 }"
+mtimecmp = "0xFFFFFFFFFFFFFFFF"
+stimecmp = "0xFFFFFFFFFFFFFFFF"
+# PMP entries left at reset (A=OFF); entry 0 is installed by the litmus preamble via CSR writes
+# (reset_pmp strips the A field from any config default, so it must be written post-reset in code).
+pmpcfg_n = "[{ bits = 0x00 } ; 64]"
+pmpaddr_n = "[0x0000000000000000 ; 64]"
+
+[const_primops]
+get_config_print_reg = false
+get_config_print_instr = false
+get_config_print_platform = false
+get_config_print_mem = false
+sys_enable_fdext = false
+sys_enable_zfinx = false
+sys_enable_rvc = true
+sys_enable_next = false
+sys_enable_vext = false
+sys_enable_writable_fiom = true
+sys_enable_writable_misa = true
+sys_enable_bext = false
+sys_pmp_count = "0 : %i64"
+plat_enable_pmp = false
+plat_enable_dirty_update = false
+plat_enable_misaligned_access = false
+plat_mtval_has_illegal_inst_bits = false
+plat_insns_per_tick = 10
+plat_ram_base = "0x0000000080000000"
+plat_ram_size = "0x0000000004000000"
+plat_rom_base = "0x0000000000001000"
+plat_rom_size = "0x0000000000000100"
+plat_clint_base = "0x0000000002000000"
+plat_clint_size = "0x00000000000c0000"
+plat_htif_tohost = "0x0000000040001000"
+plat_get_16_random_bits = "undefined : %bv16"
+plat_term_write = "()"
+print_reg = "()"
+print_platform = "()"
+print_instr = "()"
+print_mem_access = "()"
+speculate_conditional = "undefined : %bool"
+match_reservation = "true"
+cancel_reservation = "()"
+load_reservation = "()"
+csr_full_write_callback = "()"
+mem_read_callback = "()"
+xreg_full_write_callback = "()"
+mem_write_callback = "()"
+mem_exception_callback = "()"
+pc_write_callback = "()"
+get_config_rvfi = "false"
+plat_enable_htif = "false"
+get_config_use_abi_names = "false"

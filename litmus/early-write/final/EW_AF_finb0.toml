@@ -1,0 +1,39 @@
+# EW_AF_finb0 - early-write suite, final memory (no load of a or b; see gen_final.py).
+#
+# Tested final memory: *b = 0.
+# Hart 0 runs the FAULTING program: lanes 2 and 3 (a, b) are written EARLY (K2=5, K3=6) before the
+# store to lane 1 (x7, outside the PMP region) traps; the handler widens the PMP entry and returns,
+# the faulting store replays (F1), and lanes 2 and 3 are written AGAIN with the same values (D2, D3).
+arch = "RISCV"
+name = "EW_AF_finb0"
+symbolic = ["a", "b"]
+
+[thread.0]
+init = { pc_reset_address = "0x0000000080100000", x16 = "a", x17 = "b" }
+code = """
+	csrw pmpaddr0, x29
+	csrw pmpcfg0, x30
+	csrw mepc, x28
+	mret
+	addi x22, x0, 5
+	addi x23, x0, 6
+	sw x22,0(x16)
+	sw x23,0(x17)
+	sw x5,0(x7)
+	sw x22,0(x16)
+	sw x23,0(x17)
+"""
+
+[section.mhandler]
+address = "0x0000000080200000"
+code = """
+	lui t6, 0x21000
+	addi t6, t6, -1
+	csrw pmpaddr0, t6
+	addi x1, x0, 0x2A
+	mret
+"""
+
+[final]
+expect = "unsat"
+assertion = "*b = 0"
